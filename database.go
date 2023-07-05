@@ -157,6 +157,26 @@ func (db DB) stats() (stats, error) {
 
 func parseTime(t interface{}) (time.Time, error) {
 	switch t := t.(type) {
+	case int:
+		return time.UnixMilli(int64(t)), nil
+	case int8:
+		return time.UnixMilli(int64(t)), nil
+	case int16:
+		return time.UnixMilli(int64(t)), nil
+	case int32:
+		return time.UnixMilli(int64(t)), nil
+	case int64:
+		return time.UnixMilli(t), nil
+	case uint:
+		return time.UnixMilli(int64(t)), nil
+	case uint8:
+		return time.UnixMilli(int64(t)), nil
+	case uint16:
+		return time.UnixMilli(int64(t)), nil
+	case uint32:
+		return time.UnixMilli(int64(t)), nil
+	case float32:
+		return time.UnixMilli(int64(t)), nil
 	case float64:
 		return time.UnixMilli(int64(t)), nil
 	case string:
@@ -168,7 +188,7 @@ func parseTime(t interface{}) (time.Time, error) {
 		if err == nil {
 			return time.UnixMilli(int64(tsInt)), nil
 		}
-		ts, err = time.Parse(time.StampNano, t)
+		ts, err = time.Parse(time.Stamp, t)
 		if err == nil {
 			return ts, nil
 		}
@@ -181,7 +201,7 @@ func parseTime(t interface{}) (time.Time, error) {
 func collectPropNames(m map[string]interface{}) []string {
 	propNames := make([]string, 0, len(m))
 	for name, child := range m {
-		if childMap, ok := child.(map[string]interface{}); ok {
+		if childMap, ok := child.(map[string]interface{}); ok && len(childMap) > 0 {
 			childrenNames := collectPropNames(childMap)
 			for _, childName := range childrenNames {
 				propNames = append(propNames, name+"."+childName)
