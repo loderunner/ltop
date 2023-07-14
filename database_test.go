@@ -245,7 +245,7 @@ func testAppendLog(t *testing.T, c testCase, db DB, mock sqlmock.Sqlmock) {
 	} else {
 		expectedExec = expectedExec.WithArgs(c.timestamp, []byte(c.input))
 	}
-	expectedExec = expectedExec.WillReturnResult(sqlmock.NewResult(1, 1))
+	expectedExec.WillReturnResult(sqlmock.NewResult(1, 1))
 
 	err := db.appendLog([]byte(c.input))
 	if c.err {
