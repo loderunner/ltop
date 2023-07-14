@@ -2,32 +2,40 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	var in *os.File
+	var input *os.File
 	var err error
 
 	flag.Parse()
 	args := flag.Args()
 	if len(args) > 0 {
-		in, err = os.Open(args[0])
+		input, err = os.Open(args[0])
 		if err != nil {
 			panic(err.Error())
 		}
 	} else {
-		in = os.Stdin
+		input = os.Stdin
 	}
 
-	db, err := newDatabase()
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		panic(err.Error())
 	}
 
-	scanner := bufio.NewScanner(in)
+	db, err := newDatabase(sqlDB)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	scanner := bufio.NewScanner(input)
 
 	for scanner.Scan() {
 		err = db.appendLog(scanner.Bytes())

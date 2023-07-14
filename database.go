@@ -4,18 +4,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type DB struct {
-	sqlDB        *sql.DB
-	columns      map[string]struct{}
-	appendStmt   *sql.Stmt
-	logCountStmt *sql.Stmt
+	sqlDB      *sql.DB
+	appendStmt *sql.Stmt
+	statsStmt  *sql.Stmt
 }
 
 type stats struct {
@@ -24,23 +22,18 @@ type stats struct {
 	maxTimestamp time.Time
 }
 
-const sqlite3TimeLayout = "2006-01-02 03:04:05.999999999-07:00"
+const sqliteTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 
-func newDatabase() (DB, error) {
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		return DB{}, fmt.Errorf("couldn't open database: %w", err)
-	}
+func newDatabase(sqlDB *sql.DB) (DB, error) {
+	db := DB{sqlDB: sqlDB}
 
-	_, err = sqlDB.Exec(
-		"CREATE TABLE IF NOT EXISTS logs(timestamp DATETIME NOT NULL, data TEXT);" +
-			"CREATE INDEX IF NOT EXISTS logs__timestamp ON logs(timestamp)",
+	_, err := sqlDB.Exec(
+		"CREATE TABLE logs(timestamp DATETIME NOT NULL, data TEXT);" +
+			"CREATE INDEX logs__timestamp ON logs(timestamp)",
 	)
 	if err != nil {
 		return DB{}, fmt.Errorf("couldn't create schema: %w", err)
 	}
-
-	db := DB{sqlDB: sqlDB, columns: make(map[string]struct{})}
 
 	db.appendStmt, err = sqlDB.Prepare(
 		"INSERT INTO logs(timestamp, data) VALUES (:timestamp, json(:data))",
@@ -49,7 +42,7 @@ func newDatabase() (DB, error) {
 		return DB{}, fmt.Errorf("couldn't create append statement: %w", err)
 	}
 
-	db.logCountStmt, err = sqlDB.Prepare(
+	db.statsStmt, err = sqlDB.Prepare(
 		"SELECT " +
 			"COUNT(timestamp) AS count, " +
 			"MIN(timestamp) AS minTimestamp, " +
@@ -63,8 +56,10 @@ func newDatabase() (DB, error) {
 	return db, nil
 }
 
+var invalidCharacters = regexp.MustCompile(`[^\w\d]+`)
+
 func (db DB) appendLog(logJSON []byte) error {
-	var logData map[string]interface{}
+	var logData map[string]any
 	err := json.Unmarshal(logJSON, &logData)
 	if err != nil {
 		return fmt.Errorf("invalid json data: %w", err)
@@ -91,24 +86,18 @@ func (db DB) appendLog(logJSON []byte) error {
 	if len(propNames) > 0 {
 		queryBuilder := strings.Builder{}
 		for _, name := range propNames {
-			if _, ok := db.columns[name]; !ok {
-				queryBuilder.WriteString(
-					"CREATE INDEX IF NOT EXISTS \"logs__" +
-						strings.ReplaceAll(name, ".", "_") +
-						"\" ON logs(json_extract(data, '$." +
-						name +
-						"'));\n",
-				)
-			}
+			queryBuilder.WriteString(
+				`CREATE INDEX IF NOT EXISTS "logs__` +
+					invalidCharacters.ReplaceAllString(name, "_") +
+					`" ON logs(json_extract(data, '$.` +
+					name +
+					"'));\n",
+			)
 		}
 		if queryBuilder.Len() > 0 {
 			_, err = db.sqlDB.Exec(queryBuilder.String())
 			if err != nil {
-				return fmt.Errorf("couldn't create index on new field: %w", err)
-			}
-
-			for _, name := range propNames {
-				db.columns[name] = struct{}{}
+				return fmt.Errorf("couldn't create indexes: %w", err)
 			}
 		}
 	}
@@ -125,7 +114,7 @@ func (db DB) appendLog(logJSON []byte) error {
 }
 
 func (db DB) stats() (stats, error) {
-	row := db.logCountStmt.QueryRow()
+	row := db.statsStmt.QueryRow()
 	err := row.Err()
 	if err != nil {
 		return stats{}, fmt.Errorf("couldn't query stats: %w", err)
@@ -138,12 +127,12 @@ func (db DB) stats() (stats, error) {
 		return stats{}, fmt.Errorf("couldn't read stats: %w", err)
 	}
 
-	minTimestamp, err := time.Parse(sqlite3TimeLayout, minTimestampString)
+	minTimestamp, err := time.Parse(sqliteTimeLayout, minTimestampString)
 	if err != nil {
 		return stats{}, fmt.Errorf("couldn't parse min timestamp: %w", err)
 	}
 
-	maxTimestamp, err := time.Parse(sqlite3TimeLayout, maxTimestampString)
+	maxTimestamp, err := time.Parse(sqliteTimeLayout, maxTimestampString)
 	if err != nil {
 		return stats{}, fmt.Errorf("couldn't parse max timestamp: %w", err)
 	}
@@ -155,7 +144,7 @@ func (db DB) stats() (stats, error) {
 	}, nil
 }
 
-func parseTime(t interface{}) (time.Time, error) {
+func parseTime(t any) (time.Time, error) {
 	switch t := t.(type) {
 	case int:
 		return time.UnixMilli(int64(t)), nil
@@ -198,10 +187,10 @@ func parseTime(t interface{}) (time.Time, error) {
 	}
 }
 
-func collectPropNames(m map[string]interface{}) []string {
+func collectPropNames(m map[string]any) []string {
 	propNames := make([]string, 0, len(m))
 	for name, child := range m {
-		if childMap, ok := child.(map[string]interface{}); ok && len(childMap) > 0 {
+		if childMap, ok := child.(map[string]any); ok && len(childMap) > 0 {
 			childrenNames := collectPropNames(childMap)
 			for _, childName := range childrenNames {
 				propNames = append(propNames, name+"."+childName)
