@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"flag"
 	"os"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/rivo/tview"
 )
 
 func main() {
@@ -46,5 +48,22 @@ func main() {
 	err = scanner.Err()
 	if err != nil {
 		panic(err.Error())
+	}
+
+	logs, err := db.queryLogs(time.Time{}, time.Now())
+	if err != nil {
+		panic(err.Error())
+	}
+
+	table := tview.NewTable()
+	table.SetBorder(false)
+	table.SetSelectable(true, false)
+	for i, log := range logs {
+		table.SetCellSimple(i, 0, log.timestamp.String())
+		table.SetCellSimple(i, 1, log.message)
+	}
+
+	if err := tview.NewApplication().SetRoot(table, true).Run(); err != nil {
+		panic(err)
 	}
 }
