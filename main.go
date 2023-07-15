@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"database/sql"
 	"flag"
-	"fmt"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -48,12 +47,4 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-
-	stats, err := db.stats()
-	if err != nil {
-		panic(err.Error())
-	}
-	fmt.Printf("Count: %d\n", stats.count)
-	fmt.Printf("Min timestamp: %s\n", stats.minTimestamp.String())
-	fmt.Printf("Max timestamp: %s\n", stats.maxTimestamp.String())
 }

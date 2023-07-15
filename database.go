@@ -16,6 +16,12 @@ type DB struct {
 	statsStmt  *sql.Stmt
 }
 
+type log struct {
+	timestamp time.Time
+	message   string
+	data      map[string]any
+}
+
 type stats struct {
 	count        int64
 	minTimestamp time.Time
@@ -144,6 +150,62 @@ func (db DB) stats() (stats, error) {
 	}, nil
 }
 
+func (db DB) queryLogs(from, to time.Time) ([]log, error) {
+	rows, err := db.sqlDB.Query("SELECT timestamp, data"+
+		" FROM logs"+
+		" WHERE timestamp BETWEEN ? AND ?",
+		from,
+		to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query logs: %w", err)
+	}
+	defer rows.Close()
+
+	logs := []log{}
+	for rows.Next() {
+		var ts time.Time
+		var logJSON []byte
+
+		err := rows.Scan(&ts, &logJSON)
+		if err != nil {
+			// skip invalid row
+			continue
+		}
+
+		var logData map[string]any
+		err = json.Unmarshal(logJSON, &logData)
+		if err != nil {
+			logs = append(logs, log{timestamp: ts, message: string(logJSON)})
+			continue
+		}
+
+		if msg, ok := logData["message"]; ok {
+			logs = append(logs, log{
+				timestamp: ts,
+				message:   fmt.Sprint(msg),
+				data:      logData,
+			})
+			continue
+		}
+		if msg, ok := logData["msg"]; ok {
+			logs = append(logs, log{
+				timestamp: ts,
+				message:   fmt.Sprint(msg),
+				data:      logData,
+			})
+			continue
+		}
+		logs = append(logs, log{
+			timestamp: ts,
+			message:   string(logJSON),
+			data:      logData,
+		})
+	}
+
+	return logs, nil
+}
+
 func parseTime(t any) (time.Time, error) {
 	switch t := t.(type) {
 	case int:
@@ -179,7 +241,7 @@ func parseTime(t any) (time.Time, error) {
 		}
 		ts, err = time.Parse(time.Stamp, t)
 		if err == nil {
-			return ts, nil
+			return ts.AddDate(time.Now().Year(), 0, 0), nil
 		}
 		return time.Time{}, fmt.Errorf("failed to parse timestamp: \"%s\"", t)
 	default:

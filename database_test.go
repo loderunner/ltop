@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -12,12 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const millis int64 = 1688596148685
-const rfc3339UTC = "2023-07-05T22:29:08.685Z"
-const rfc3339TZ = "2023-07-06T00:29:08.685+02:00"
-const syslog = "Jul 10 22:29:08"
+var timestamp = time.Now().Truncate(time.Millisecond).UTC()
+var millis = timestamp.UnixMilli()
+var rfc3339UTC = timestamp.Format(time.RFC3339Nano)
+var rfc3339TZ = timestamp.Local().Format(time.RFC3339Nano)
+var syslog = timestamp.Format(time.Stamp)
 
-var timestamp = time.UnixMilli(millis).UTC()
 var sqliteTimestamp = timestamp.Format(sqliteTimeLayout)
 
 func TestCollectPropNames(t *testing.T) {
@@ -87,7 +88,7 @@ func TestParseTime(t *testing.T) {
 		{in: rfc3339UTC, expect: timestamp},
 		{in: rfc3339TZ, expect: timestamp},
 		{in: strconv.Itoa(int(millis)), expect: timestamp},
-		{in: syslog, expect: time.Date(0, time.July, 10, 22, 29, 8, 0, time.UTC)},
+		{in: syslog, expect: timestamp.Truncate(time.Second)},
 	}
 	for _, c := range testCases {
 		t.Run(fmt.Sprintf("%T(%v)", c.in, c.in), func(t *testing.T) {
@@ -123,7 +124,7 @@ func TestNewDatabase(t *testing.T) {
 	}
 }
 
-type testCase struct {
+type appendLogTestCase struct {
 	name      string
 	input     string
 	timestamp time.Time
@@ -132,7 +133,7 @@ type testCase struct {
 }
 
 func TestAppendLog(t *testing.T) {
-	testCases := []testCase{
+	testCases := []appendLogTestCase{
 		{name: "empty string", err: true},
 		{name: "invalid JSON", input: "{", err: true},
 		{name: "empty JSON", input: "{}"},
@@ -178,6 +179,36 @@ func TestAppendLog(t *testing.T) {
 			func(t *testing.T) { testAppendLog(t, c, db, mock) },
 		)
 	}
+}
+
+func TestQueryLogs(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error opening mock database: %s", err)
+	}
+	defer sqlDB.Close()
+
+	db := testCreateDatabase(t, sqlDB, mock)
+
+	from := timestamp.Add(-15 * time.Minute)
+	to := timestamp
+	expect := []log{}
+	rows := sqlmock.NewRows([]string{"timestamp", "data"})
+	for t := from; t.Before(to); t = t.Add(time.Minute) {
+		msg := fmt.Sprintf("It's %s", t)
+		logData := map[string]any{"timestamp": float64(t.UnixMilli()), "msg": msg}
+		logJSON, _ := json.Marshal(logData)
+		rows.AddRow(t, logJSON)
+		expect = append(expect, log{timestamp: t, message: msg, data: logData})
+	}
+
+	mock.ExpectQuery("SELECT timestamp, data FROM logs").
+		WithArgs(from, to).
+		WillReturnRows(rows)
+
+	logs, err := db.queryLogs(from, to)
+	assert.NoError(t, err)
+	assert.Equal(t, expect, logs)
 }
 
 func TestStats(t *testing.T) {
@@ -231,7 +262,7 @@ func (a anyTime) Match(v driver.Value) bool {
 	return ok
 }
 
-func testAppendLog(t *testing.T, c testCase, db DB, mock sqlmock.Sqlmock) {
+func testAppendLog(t *testing.T, c appendLogTestCase, db DB, mock sqlmock.Sqlmock) {
 	if len(c.indexes) > 0 {
 		createIndexString := ""
 		for range c.indexes {
