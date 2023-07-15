@@ -56,7 +56,6 @@ func main() {
 	}
 
 	table := tview.NewTable()
-	table.SetBorder(false)
 	table.SetSelectable(true, false)
 	for i, log := range logs {
 		table.SetCellSimple(i, 0, log.timestamp.String())
