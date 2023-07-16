@@ -17,6 +17,7 @@ type DB struct {
 }
 
 type log struct {
+	level     string
 	timestamp time.Time
 	message   string
 	data      map[string]any
@@ -34,18 +35,19 @@ func newDatabase(sqlDB *sql.DB) (DB, error) {
 	db := DB{sqlDB: sqlDB}
 
 	_, err := sqlDB.Exec(
-		"CREATE TABLE logs(timestamp DATETIME NOT NULL, data TEXT);" +
-			"CREATE INDEX logs__timestamp ON logs(timestamp)",
+		"CREATE TABLE logs(timestamp DATETIME NOT NULL, level TEXT, data TEXT);" +
+			"CREATE INDEX logs__timestamp ON logs(timestamp);" +
+			"CREATE INDEX logs__level ON logs(level)",
 	)
 	if err != nil {
 		return DB{}, fmt.Errorf("couldn't create schema: %w", err)
 	}
 
 	db.appendStmt, err = sqlDB.Prepare(
-		"INSERT INTO logs(timestamp, data) VALUES (:timestamp, json(:data))",
+		"INSERT INTO logs(timestamp, level, data) VALUES (:timestamp, :level, json(:data))",
 	)
 	if err != nil {
-		return DB{}, fmt.Errorf("couldn't create append statement: %w", err)
+		return DB{}, fmt.Errorf("couldn't prepare append statement: %w", err)
 	}
 
 	db.statsStmt, err = sqlDB.Prepare(
@@ -56,7 +58,7 @@ func newDatabase(sqlDB *sql.DB) (DB, error) {
 			"FROM logs",
 	)
 	if err != nil {
-		return DB{}, fmt.Errorf("couldn't create count statement: %w", err)
+		return DB{}, fmt.Errorf("couldn't prepare count statement: %w", err)
 	}
 
 	return db, nil
@@ -88,6 +90,26 @@ func (db DB) appendLog(logJSON []byte) error {
 		timestamp = time.Now()
 	}
 
+	levelData, ok := logData["level"].(string)
+	if !ok {
+		levelData, ok = logData["lvl"].(string)
+	}
+	var level string
+	if ok {
+		switch strings.ToLower(levelData) {
+		case "error", "erro", "err":
+			level = "error"
+		case "warning", "warn":
+			level = "warn"
+		case "info":
+			level = "info"
+		case "debug", "debu":
+			level = "debug"
+		default:
+			level = levelData
+		}
+	}
+
 	propNames := collectPropNames(logData)
 	if len(propNames) > 0 {
 		queryBuilder := strings.Builder{}
@@ -110,6 +132,7 @@ func (db DB) appendLog(logJSON []byte) error {
 
 	_, err = db.appendStmt.Exec(
 		sql.Named("timestamp", timestamp.UTC()),
+		sql.Named("level", level),
 		sql.Named("data", logJSON),
 	)
 	if err != nil {
@@ -151,7 +174,7 @@ func (db DB) stats() (stats, error) {
 }
 
 func (db DB) queryLogs(from, to time.Time) ([]log, error) {
-	rows, err := db.sqlDB.Query("SELECT timestamp, data"+
+	rows, err := db.sqlDB.Query("SELECT timestamp, level, data"+
 		" FROM logs"+
 		" WHERE timestamp BETWEEN ? AND ?",
 		from,
@@ -165,9 +188,10 @@ func (db DB) queryLogs(from, to time.Time) ([]log, error) {
 	logs := []log{}
 	for rows.Next() {
 		var ts time.Time
+		var level string
 		var logJSON []byte
 
-		err := rows.Scan(&ts, &logJSON)
+		err := rows.Scan(&ts, &level, &logJSON)
 		if err != nil {
 			// skip invalid row
 			continue
@@ -191,11 +215,18 @@ func (db DB) queryLogs(from, to time.Time) ([]log, error) {
 		if msg, ok := logData["msg"]; ok {
 			logs = append(logs, log{
 				timestamp: ts,
+				level:     level,
 				message:   fmt.Sprint(msg),
 				data:      logData,
 			})
 			continue
 		}
+
+		switch level {
+		case "error":
+
+		}
+
 		logs = append(logs, log{
 			timestamp: ts,
 			message:   string(logJSON),

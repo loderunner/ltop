@@ -65,6 +65,9 @@ func (tc *tableContent) getColumns() []string {
 			if k == "timestamp" || k == "time" || k == "date" {
 				continue
 			}
+			if k == "level" || k == "lvl" {
+				continue
+			}
 			if k == "msg" || k == "message" {
 				continue
 			}
@@ -83,13 +86,31 @@ func (tc *tableContent) getColumns() []string {
 
 func (tc *tableContent) GetCell(row, column int) *tview.TableCell {
 	cell := tview.NewTableCell("")
-	if column == 0 {
-		cell.SetText(tc.logs[row].timestamp.Format(time.StampMilli))
-	} else if column == 1 {
-		cell.SetText(tc.logs[row].message)
+	log := tc.logs[row]
+	cell.SetText(log.level)
+	switch column {
+	case 0:
+		switch log.level {
+		case "error":
+			cell.SetTextColor(tcell.ColorBlack)
+			cell.SetBackgroundColor(tcell.ColorRed)
+		case "warn":
+			cell.SetTextColor(tcell.ColorBlack)
+			cell.SetBackgroundColor(tcell.ColorYellow)
+		case "info":
+			cell.SetTextColor(tcell.ColorBlack)
+			cell.SetBackgroundColor(tcell.ColorBlue)
+		case "debug":
+			cell.SetTextColor(tcell.ColorBlack)
+			cell.SetBackgroundColor(tcell.ColorGreen)
+		}
+	case 1:
+		cell.SetText(log.timestamp.Format(time.StampMilli))
+	case 2:
+		cell.SetText(log.message)
 		cell.SetExpansion(1)
-	} else {
-		v := tc.logs[row].data[tc.columns[column]]
+	default:
+		v := log.data[tc.columns[column]]
 		if v != nil {
 			cell.SetText(fmt.Sprint(v))
 		}
@@ -102,7 +123,7 @@ func (tc *tableContent) GetRowCount() int {
 }
 
 func (tc *tableContent) GetColumnCount() int {
-	return len(tc.getColumns()) + 2
+	return len(tc.getColumns()) + 3
 }
 
 func (tc *tableContent) SetCell(row, column int, cell *tview.TableCell) {

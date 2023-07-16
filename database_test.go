@@ -128,6 +128,7 @@ type appendLogTestCase struct {
 	name      string
 	input     string
 	timestamp time.Time
+	level     string
 	indexes   []string
 	err       bool
 }
@@ -154,6 +155,12 @@ func TestAppendLog(t *testing.T) {
 			input:     fmt.Sprintf(`{"date":%d}`, millis),
 			timestamp: timestamp,
 			indexes:   []string{"date"},
+		},
+		{
+			name:    "with level",
+			input:   `{"level":"info"}`,
+			level:   "info",
+			indexes: []string{"level"},
 		},
 		{
 			name: "with fields",
@@ -193,16 +200,16 @@ func TestQueryLogs(t *testing.T) {
 	from := timestamp.Add(-15 * time.Minute)
 	to := timestamp
 	expect := []log{}
-	rows := sqlmock.NewRows([]string{"timestamp", "data"})
+	rows := sqlmock.NewRows([]string{"timestamp", "level", "data"})
 	for t := from; t.Before(to); t = t.Add(time.Minute) {
 		msg := fmt.Sprintf("It's %s", t)
-		logData := map[string]any{"timestamp": float64(t.UnixMilli()), "msg": msg}
+		logData := map[string]any{"timestamp": float64(t.UnixMilli()), "level": "info", "msg": msg}
 		logJSON, _ := json.Marshal(logData)
-		rows.AddRow(t, logJSON)
-		expect = append(expect, log{timestamp: t, message: msg, data: logData})
+		rows.AddRow(t, "info", logJSON)
+		expect = append(expect, log{timestamp: t, level: "info", message: msg, data: logData})
 	}
 
-	mock.ExpectQuery("SELECT timestamp, data FROM logs").
+	mock.ExpectQuery("SELECT timestamp, level, data FROM logs").
 		WithArgs(from, to).
 		WillReturnRows(rows)
 
@@ -243,7 +250,7 @@ func TestStats(t *testing.T) {
 
 func testCreateDatabase(t *testing.T, sqlDB *sql.DB, mock sqlmock.Sqlmock) DB {
 	mock.
-		ExpectExec("CREATE TABLE logs.*CREATE INDEX logs__timestamp ON logs").
+		ExpectExec("CREATE TABLE logs.*CREATE INDEX logs__timestamp ON logs.*CREATE INDEX logs__level ON logs").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectPrepare("INSERT INTO logs")
 	mock.ExpectPrepare("SELECT .* FROM logs")
@@ -272,9 +279,9 @@ func testAppendLog(t *testing.T, c appendLogTestCase, db DB, mock sqlmock.Sqlmoc
 	}
 	expectedExec := mock.ExpectExec("INSERT INTO logs")
 	if c.timestamp.IsZero() {
-		expectedExec = expectedExec.WithArgs(anyTime{}, []byte(c.input))
+		expectedExec = expectedExec.WithArgs(anyTime{}, c.level, []byte(c.input))
 	} else {
-		expectedExec = expectedExec.WithArgs(c.timestamp, []byte(c.input))
+		expectedExec = expectedExec.WithArgs(c.timestamp, c.level, []byte(c.input))
 	}
 	expectedExec.WillReturnResult(sqlmock.NewResult(1, 1))
 
