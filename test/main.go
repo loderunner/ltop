@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
+	"math/rand"
 	"time"
+
+	"github.com/spf13/pflag"
 )
 
 const RFC3339Milli = "2006-01-02T15:04:05.999Z07:00"
@@ -32,12 +34,13 @@ var timeFormats = map[string]string{
 }
 
 func main() {
-	timestamp := flag.String("time", "timestamp", "JSON key for log timestamp")
-	timeFmt := flag.String("time-fmt", RFC3339Milli, "go time layout string or constant name from time package")
-	msg := flag.String("msg", "msg", "JSON key for log message")
-	interval := flag.Int64("interval", 1000, "time interval in milliseconds between logs")
+	timestamp := pflag.String("time", "timestamp", "JSON key for log timestamp")
+	timeFmt := pflag.String("time-fmt", RFC3339Milli, "go time layout string or constant name from time package")
+	msg := pflag.String("msg", "msg", "JSON key for log message")
+	interval := pflag.Int64("interval", 1000, "time interval in milliseconds between logs")
+	levels := pflag.Float32Slice("levels", []float32{.2, .1, .65, .05}, "distribution of levels (error,warning,info,debug)")
 
-	flag.Parse()
+	pflag.Parse()
 
 	if timeFmtArg, ok := timeFormats[*timeFmt]; ok {
 		*timeFmt = timeFmtArg
@@ -47,6 +50,28 @@ func main() {
 		logData := map[string]any{}
 		logData[*timestamp] = time.Now().Format(*timeFmt)
 		logData[*msg] = fmt.Sprintf("It's %s", time.Now().Format("15:04:05.999"))
+		var level string
+		rnd := rand.Float32()
+		for i, p := range *levels {
+			if rnd >= p {
+				rnd -= p
+			} else {
+				switch i {
+				case 0:
+					level = "error"
+				case 1:
+					level = "warn"
+				case 2:
+					level = "info"
+				case 3:
+					level = "debug"
+				default:
+					level = "info"
+				}
+				break
+			}
+		}
+		logData["level"] = level
 		logJSON, err := json.Marshal(logData)
 		if err != nil {
 			panic(err.Error())
