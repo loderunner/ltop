@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"flag"
 	"os"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/rivo/tview"
 )
 
 func main() {
@@ -36,33 +34,25 @@ func main() {
 		panic(err.Error())
 	}
 
+	go scanInput(input, db)
+
+	if err := newApplication(db).Run(); err != nil {
+		panic(err)
+	}
+}
+
+func scanInput(input *os.File, db DB) {
 	scanner := bufio.NewScanner(input)
 
 	for scanner.Scan() {
-		err = db.appendLog(scanner.Bytes())
+		err := db.appendLog(scanner.Bytes())
 		if err != nil {
 			panic(err.Error())
 		}
 	}
 
-	err = scanner.Err()
+	err := scanner.Err()
 	if err != nil {
 		panic(err.Error())
-	}
-
-	logs, err := db.queryLogs(time.Time{}, time.Now())
-	if err != nil {
-		panic(err.Error())
-	}
-
-	table := tview.NewTable()
-	table.SetSelectable(true, false)
-	for i, log := range logs {
-		table.SetCellSimple(i, 0, log.timestamp.String())
-		table.SetCellSimple(i, 1, log.message)
-	}
-
-	if err := tview.NewApplication().SetRoot(table, true).Run(); err != nil {
-		panic(err)
 	}
 }

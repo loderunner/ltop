@@ -7,7 +7,8 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}",
-      "args": ["${workspaceFolder}/.vscode/sample.log"]
+      "args": ["${workspaceFolder}/.vscode/sample.log"],
+      "console": "integratedTerminal"
     }
   ]
 }
