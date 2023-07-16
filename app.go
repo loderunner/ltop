@@ -27,6 +27,7 @@ func newApplication(db DB) *tview.Application {
 	app.table = tview.NewTable()
 	app.table.SetSelectable(true, false)
 	app.table.SetContent(&app.content)
+	app.table.SetFixed(1, 0)
 
 	app.Application = tview.NewApplication()
 	app.SetRoot(app.table, true)
@@ -85,11 +86,37 @@ func (tc *tableContent) getColumns() []string {
 }
 
 func (tc *tableContent) GetCell(row, column int) *tview.TableCell {
-	cell := tview.NewTableCell("")
-	log := tc.logs[row]
-	cell.SetText(log.level)
+	if row == 0 {
+		return tc.getHeaderCell(row, column)
+	} else {
+		return tc.getContentCell(row-1, column)
+	}
+}
+
+func (tc *tableContent) getHeaderCell(row int, column int) *tview.TableCell {
+	var text string
 	switch column {
 	case 0:
+		text = "level"
+	case 1:
+		text = "timestamp"
+	case 2:
+		text = "message"
+	default:
+		text = tc.columns[column-3]
+	}
+	return tview.NewTableCell(text).
+		SetTextColor(tcell.ColorBlack).
+		SetBackgroundColor(tcell.ColorPurple).
+		SetSelectable(false)
+}
+
+func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
+	cell := tview.NewTableCell("")
+	log := tc.logs[row]
+	switch column {
+	case 0:
+		cell.SetText(log.level)
 		switch log.level {
 		case "error":
 			cell.SetTextColor(tcell.ColorBlack)
