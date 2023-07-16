@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -51,23 +52,46 @@ func (app *application) pollLogs(db DB) {
 		if err != nil {
 			break
 		}
-		app.QueueUpdateDraw(func() {
-			if row, _ := app.table.GetSelection(); row == 0 {
-				app.table.ScrollToBeginning()
-			}
-		})
+		app.content.columns = app.content.getColumns()
+		sort.Stable(sort.StringSlice(app.content.columns))
+		app.QueueUpdateDraw(func() {})
 	}
+}
+
+func (tc *tableContent) getColumns() []string {
+	columnSet := map[string]struct{}{}
+	for _, log := range tc.logs {
+		for k, v := range log.data {
+			if k == "timestamp" || k == "time" || k == "date" {
+				continue
+			}
+			if k == "msg" || k == "message" {
+				continue
+			}
+			if v == nil || v == "" {
+				continue
+			}
+			columnSet[k] = struct{}{}
+		}
+	}
+	columns := make([]string, 0, len(columnSet))
+	for k := range columnSet {
+		columns = append(columns, k)
+	}
+	return columns
 }
 
 func (tc *tableContent) GetCell(row, column int) *tview.TableCell {
 	cell := tview.NewTableCell("")
 	if column == 0 {
-		cell.SetText(tc.logs[row].timestamp.Format("15:04:05.000"))
+		cell.SetText(tc.logs[row].timestamp.Format(time.StampMilli))
 	} else if column == 1 {
 		cell.SetText(tc.logs[row].message)
+		cell.SetExpansion(1)
 	} else {
-		if field, ok := tc.logs[row].data[tc.columns[column]]; ok {
-			cell.SetText(fmt.Sprint(field))
+		v := tc.logs[row].data[tc.columns[column]]
+		if v != nil {
+			cell.SetText(fmt.Sprint(v))
 		}
 	}
 	return cell
@@ -78,7 +102,7 @@ func (tc *tableContent) GetRowCount() int {
 }
 
 func (tc *tableContent) GetColumnCount() int {
-	return len(tc.columns) + 2
+	return len(tc.getColumns()) + 2
 }
 
 func (tc *tableContent) SetCell(row, column int, cell *tview.TableCell) {
