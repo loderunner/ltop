@@ -33,11 +33,15 @@ var timeFormats = map[string]string{
 
 func main() {
 	timestamp := flag.String("time", "timestamp", "JSON key for log timestamp")
-	timeFmt := flag.String("time-fmt", RFC3339Milli, "go time layout string or constant")
+	timeFmt := flag.String("time-fmt", RFC3339Milli, "go time layout string or constant name from time package")
 	msg := flag.String("msg", "msg", "JSON key for log message")
 	interval := flag.Int64("interval", 1000, "time interval in milliseconds between logs")
 
 	flag.Parse()
+
+	if timeFmtArg, ok := timeFormats[*timeFmt]; ok {
+		*timeFmt = timeFmtArg
+	}
 
 	for range time.NewTicker(time.Duration(*interval) * time.Millisecond).C {
 		logData := map[string]any{}
