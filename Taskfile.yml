@@ -15,4 +15,4 @@ tasks:
       - if [ $(go env GOOS) = 'linux' ]; then go test -msan -v ./...; fi
   build:
     cmds:
-      - go build -o build/ltop ./...
+      - go build -o build/ltop .
