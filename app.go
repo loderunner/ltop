@@ -167,7 +167,7 @@ func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
 	case 2:
 		msg := log.message
 		if runewidth.StringWidth(msg) > 80 {
-			msg = runewidth.Truncate(msg, 77, "...")
+			msg = runewidth.Truncate(msg, 79, "…")
 		}
 		cell.SetText(msg)
 		cell.SetExpansion(1)
