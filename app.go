@@ -11,8 +11,11 @@ import (
 
 type application struct {
 	*tview.Application
-	table   *tview.Table
-	content tableContent
+	pages    *tview.Pages
+	logsView *tview.TextView
+	table    *tview.Table
+	content  tableContent
+	db       *DB
 }
 
 type tableContent struct {
@@ -21,42 +24,69 @@ type tableContent struct {
 	columns []string
 }
 
-func newApplication(db DB) *tview.Application {
-	var app application
+func newApplication(db *DB) *tview.Application {
+	app := application{db: db}
+
+	app.pages = tview.NewPages()
 
 	app.table = tview.NewTable()
 	app.table.SetSelectable(true, false)
 	app.table.SetContent(&app.content)
 	app.table.SetFixed(1, 0)
 
+	app.pages.AddPage("main", app.table, true, true)
+
+	app.logsView = tview.NewTextView()
+
+	app.pages.AddPage("logs", app.logsView, true, false)
+
 	app.Application = tview.NewApplication()
-	app.SetRoot(app.table, true)
+	app.SetRoot(app.pages, true)
 	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
-		if e.Key() == tcell.KeyRune && e.Rune() == 'q' {
-			app.Stop()
-			return nil
+		key := e.Key()
+		logger.Info("received key event", "key", key)
+		switch key {
+		case tcell.KeyF1:
+			app.pages.SwitchToPage("main")
+		case tcell.KeyF2:
+			app.pages.SwitchToPage("logs")
+		case tcell.KeyRune:
+			if e.Rune() == 'q' {
+				app.Stop()
+				return nil
+			}
 		}
 		return e
 	})
 
-	go app.pollLogs(db)
+	app.queryLogs()
+	go app.pollLogs()
 
 	return app.Application
 }
 
-func (app *application) pollLogs(db DB) {
-	var err error
+func (app *application) pollLogs() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		app.content.logs, err = db.queryLogs(time.Time{}, time.Now())
-		if err != nil {
-			break
+		if page, _ := app.pages.GetFrontPage(); page == "main" {
+			app.queryLogs()
+		} else if page == "logs" {
+			app.logsView.SetText(logBuf.String())
+			app.logsView.ScrollToEnd()
 		}
-		app.content.columns = app.content.getColumns()
-		sort.Stable(sort.StringSlice(app.content.columns))
 		app.QueueUpdateDraw(func() {})
 	}
+}
+
+func (app *application) queryLogs() {
+	var err error
+	app.content.logs, err = app.db.queryLogs(time.Time{}, time.Now())
+	if err != nil {
+		return
+	}
+	app.content.columns = app.content.getColumns()
+	sort.Stable(sort.StringSlice(app.content.columns))
 }
 
 func (tc *tableContent) getColumns() []string {

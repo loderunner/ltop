@@ -13,7 +13,6 @@ import (
 type DB struct {
 	sqlDB      *sql.DB
 	appendStmt *sql.Stmt
-	statsStmt  *sql.Stmt
 }
 
 type log struct {
@@ -23,56 +22,44 @@ type log struct {
 	data      map[string]any
 }
 
-type stats struct {
-	count        int64
-	minTimestamp time.Time
-	maxTimestamp time.Time
-}
-
 const sqliteTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 
-func newDatabase(sqlDB *sql.DB) (DB, error) {
+func newDatabase(sqlDB *sql.DB) (*DB, error) {
 	db := DB{sqlDB: sqlDB}
 
+	logger.Info("creating table and indexes")
 	_, err := sqlDB.Exec(
 		"CREATE TABLE logs(timestamp DATETIME NOT NULL, level TEXT, data TEXT);" +
 			"CREATE INDEX logs__timestamp ON logs(timestamp);" +
 			"CREATE INDEX logs__level ON logs(level)",
 	)
 	if err != nil {
-		return DB{}, fmt.Errorf("couldn't create schema: %w", err)
+		return nil, fmt.Errorf("couldn't create schema: %w", err)
 	}
 
+	logger.Info("preparing insert statement")
 	db.appendStmt, err = sqlDB.Prepare(
 		"INSERT INTO logs(timestamp, level, data) VALUES (:timestamp, :level, json(:data))",
 	)
 	if err != nil {
-		return DB{}, fmt.Errorf("couldn't prepare append statement: %w", err)
+		return nil, fmt.Errorf("couldn't prepare append statement: %w", err)
 	}
 
-	db.statsStmt, err = sqlDB.Prepare(
-		"SELECT " +
-			"COUNT(timestamp) AS count, " +
-			"MIN(timestamp) AS minTimestamp, " +
-			"MAX(timestamp) AS maxTimestamp " +
-			"FROM logs",
-	)
-	if err != nil {
-		return DB{}, fmt.Errorf("couldn't prepare count statement: %w", err)
-	}
-
-	return db, nil
+	return &db, nil
 }
 
 var invalidCharacters = regexp.MustCompile(`[^\w\d]+`)
 
-func (db DB) appendLog(logJSON []byte) error {
+func (db *DB) appendLog(logJSON []byte) error {
 	var logData map[string]any
+
+	logger.Info("unmarshaling JSON log")
 	err := json.Unmarshal(logJSON, &logData)
 	if err != nil {
 		return fmt.Errorf("invalid json data: %w", err)
 	}
 
+	logger.Info("reading timestamp data")
 	timestampData, ok := logData["timestamp"]
 	if !ok {
 		timestampData, ok = logData["time"]
@@ -90,6 +77,7 @@ func (db DB) appendLog(logJSON []byte) error {
 		timestamp = time.Now()
 	}
 
+	logger.Info("reading level data")
 	levelData, ok := logData["level"].(string)
 	if !ok {
 		levelData, ok = logData["lvl"].(string)
@@ -110,6 +98,7 @@ func (db DB) appendLog(logJSON []byte) error {
 		}
 	}
 
+	logger.Info("collecting prop names")
 	propNames := collectPropNames(logData)
 	if len(propNames) > 0 {
 		queryBuilder := strings.Builder{}
@@ -123,6 +112,7 @@ func (db DB) appendLog(logJSON []byte) error {
 			)
 		}
 		if queryBuilder.Len() > 0 {
+			logger.Info("creating prop indexes", "prop_names", propNames)
 			_, err = db.sqlDB.Exec(queryBuilder.String())
 			if err != nil {
 				return fmt.Errorf("couldn't create indexes: %w", err)
@@ -130,6 +120,7 @@ func (db DB) appendLog(logJSON []byte) error {
 		}
 	}
 
+	logger.Info("inserting log in database", "timestamp", timestamp, "level", level)
 	_, err = db.appendStmt.Exec(
 		sql.Named("timestamp", timestamp.UTC()),
 		sql.Named("level", level),
@@ -142,38 +133,8 @@ func (db DB) appendLog(logJSON []byte) error {
 	return nil
 }
 
-func (db DB) stats() (stats, error) {
-	row := db.statsStmt.QueryRow()
-	err := row.Err()
-	if err != nil {
-		return stats{}, fmt.Errorf("couldn't query stats: %w", err)
-	}
-
-	var count int64
-	var minTimestampString, maxTimestampString string
-	err = row.Scan(&count, &minTimestampString, &maxTimestampString)
-	if err != nil {
-		return stats{}, fmt.Errorf("couldn't read stats: %w", err)
-	}
-
-	minTimestamp, err := time.Parse(sqliteTimeLayout, minTimestampString)
-	if err != nil {
-		return stats{}, fmt.Errorf("couldn't parse min timestamp: %w", err)
-	}
-
-	maxTimestamp, err := time.Parse(sqliteTimeLayout, maxTimestampString)
-	if err != nil {
-		return stats{}, fmt.Errorf("couldn't parse max timestamp: %w", err)
-	}
-
-	return stats{
-		count:        count,
-		minTimestamp: minTimestamp,
-		maxTimestamp: maxTimestamp,
-	}, nil
-}
-
-func (db DB) queryLogs(from, to time.Time) ([]log, error) {
+func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
+	logger.Info("querying logs", "from", from, "to", to)
 	rows, err := db.sqlDB.Query("SELECT timestamp, level, data"+
 		" FROM logs"+
 		" WHERE timestamp BETWEEN ? AND ?",
@@ -220,11 +181,6 @@ func (db DB) queryLogs(from, to time.Time) ([]log, error) {
 				data:      logData,
 			})
 			continue
-		}
-
-		switch level {
-		case "error":
-
 		}
 
 		logs = append(logs, log{

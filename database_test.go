@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -115,9 +116,6 @@ func TestNewDatabase(t *testing.T) {
 	if db.appendStmt == nil {
 		t.Fatalf("missing prepared statement for 'append'")
 	}
-	if db.statsStmt == nil {
-		t.Fatalf("missing prepared statement for 'stats'")
-	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("expectations were not met: %s", err)
@@ -218,42 +216,29 @@ func TestQueryLogs(t *testing.T) {
 	assert.Equal(t, expect, logs)
 }
 
-func TestStats(t *testing.T) {
-	sqlDB, mock, err := sqlmock.New()
+func TestRace(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
-		t.Fatalf("error opening mock database: %s", err)
-	}
-	defer sqlDB.Close()
-
-	db := testCreateDatabase(t, sqlDB, mock)
-
-	mock.ExpectQuery("SELECT").
-		WillReturnRows(
-			sqlmock.NewRowsWithColumnDefinition(
-				sqlmock.NewColumn("count"),
-				sqlmock.NewColumn("minTimestamp"),
-				sqlmock.NewColumn("maxTimestamp"),
-			).
-				AddRow(1, sqliteTimestamp, sqliteTimestamp),
-		)
-
-	expect := stats{count: 1, minTimestamp: timestamp, maxTimestamp: timestamp}
-	got, err := db.stats()
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err)
+		t.Fatalf("unexpected error creating SQL database: %s", err)
 	}
 
-	assert.Equal(t, expect.count, got.count)
-	assert.Equal(t, expect.minTimestamp, got.minTimestamp.UTC())
-	assert.Equal(t, expect.maxTimestamp, got.maxTimestamp.UTC())
+	db, err := newDatabase(sqlDB)
+	if err != nil {
+		t.Fatalf("unexpected error creating database: %s", err)
+	}
+
+	go db.appendLog([]byte{})
+	go db.queryLogs(time.Time{}, time.Now())
+	go db.appendLog([]byte{})
+	go db.appendLog([]byte(fmt.Sprintf(`{"time":%s,"level":"info","hello":"world"}`, time.Now().UTC().Format(time.RFC3339Nano))))
+	go db.queryLogs(time.Time{}, time.Now())
 }
 
-func testCreateDatabase(t *testing.T, sqlDB *sql.DB, mock sqlmock.Sqlmock) DB {
+func testCreateDatabase(t *testing.T, sqlDB *sql.DB, mock sqlmock.Sqlmock) *DB {
 	mock.
 		ExpectExec("CREATE TABLE logs.*CREATE INDEX logs__timestamp ON logs.*CREATE INDEX logs__level ON logs").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectPrepare("INSERT INTO logs")
-	mock.ExpectPrepare("SELECT .* FROM logs")
 
 	db, err := newDatabase(sqlDB)
 	if err != nil {
@@ -269,7 +254,7 @@ func (a anyTime) Match(v driver.Value) bool {
 	return ok
 }
 
-func testAppendLog(t *testing.T, c appendLogTestCase, db DB, mock sqlmock.Sqlmock) {
+func testAppendLog(t *testing.T, c appendLogTestCase, db *DB, mock sqlmock.Sqlmock) {
 	if len(c.indexes) > 0 {
 		createIndexString := ""
 		for range c.indexes {
