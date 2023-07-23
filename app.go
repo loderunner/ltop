@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 	"github.com/rivo/tview"
 )
 
@@ -164,7 +165,11 @@ func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
 	case 1:
 		cell.SetText(log.timestamp.Format(time.StampMilli))
 	case 2:
-		cell.SetText(log.message)
+		msg := log.message
+		if runewidth.StringWidth(msg) > 80 {
+			msg = runewidth.Truncate(msg, 77, "...")
+		}
+		cell.SetText(msg)
 		cell.SetExpansion(1)
 	default:
 		v := log.data[tc.columns[column]]
