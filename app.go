@@ -20,7 +20,7 @@ type application struct {
 }
 
 type tableContent struct {
-	tview.TableContent
+	*tview.TableContentReadOnly
 	logs    []log
 	columns []string
 }
@@ -33,7 +33,7 @@ func newApplication(db *DB) *tview.Application {
 	app.table = tview.NewTable()
 	app.table.SetSelectable(true, false)
 	app.table.SetContent(&app.content)
-	app.table.SetFixed(1, 0)
+	app.table.SetFixed(1, 2)
 
 	app.pages.AddPage("main", app.table, true, true)
 
@@ -186,28 +186,4 @@ func (tc *tableContent) GetRowCount() int {
 
 func (tc *tableContent) GetColumnCount() int {
 	return len(tc.getColumns()) + 3
-}
-
-func (tc *tableContent) SetCell(row, column int, cell *tview.TableCell) {
-	panic("table content is immutable")
-}
-
-func (tc *tableContent) RemoveRow(row int) {
-	panic("table content is immutable")
-}
-
-func (tc *tableContent) RemoveColumn(column int) {
-	panic("table content is immutable")
-}
-
-func (tc *tableContent) InsertRow(row int) {
-	panic("table content is immutable")
-}
-
-func (tc *tableContent) InsertColumn(column int) {
-	panic("table content is immutable")
-}
-
-func (tc *tableContent) Clear() {
-	panic("table content is immutable")
 }
