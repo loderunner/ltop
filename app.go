@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/mattn/go-runewidth"
 	"github.com/rivo/tview"
 )
 
@@ -61,20 +60,21 @@ func newApplication(db *DB) *tview.Application {
 	})
 
 	app.queryLogs()
-	go app.pollLogs()
+	go app.pollingLoop()
 
 	return app.Application
 }
 
-func (app *application) pollLogs() {
+func (app *application) pollingLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		if page, _ := app.pages.GetFrontPage(); page == "main" {
+		page, _ := app.pages.GetFrontPage()
+		switch page {
+		case "main":
 			app.queryLogs()
-		} else if page == "logs" {
+		case "logs":
 			app.logsView.SetText(logBuf.String())
-			app.logsView.ScrollToEnd()
 		}
 		app.QueueUpdateDraw(func() {})
 	}
@@ -82,12 +82,17 @@ func (app *application) pollLogs() {
 
 func (app *application) queryLogs() {
 	var err error
-	app.content.logs, err = app.db.queryLogs(time.Time{}, time.Now())
+
+	logs, err := app.db.queryLogs(time.Time{}, time.Now())
 	if err != nil {
 		return
 	}
+
+	app.content.logs = logs
 	app.content.columns = app.content.getColumns()
 	sort.Stable(sort.StringSlice(app.content.columns))
+
+	app.QueueUpdateDraw(func() {})
 }
 
 func (tc *tableContent) getColumns() []string {
@@ -165,11 +170,8 @@ func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
 	case 1:
 		cell.SetText(log.timestamp.Format(time.StampMilli))
 	case 2:
-		msg := log.message
-		if runewidth.StringWidth(msg) > 80 {
-			msg = runewidth.Truncate(msg, 79, "…")
-		}
-		cell.SetText(msg)
+		cell.SetText(log.message)
+		cell.SetMaxWidth(80)
 		cell.SetExpansion(1)
 	default:
 		v := log.data[tc.columns[column]]
