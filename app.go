@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"golang.org/x/exp/slog"
 )
 
 type application struct {
@@ -48,7 +48,7 @@ func newApplication(db *DB) *tview.Application {
 	app.SetRoot(app.pages, true)
 	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		key := e.Key()
-		logger.Info("received key event", "key", key)
+		slog.Debug("received key event", "key", key)
 		switch key {
 		case tcell.KeyF1:
 			app.pages.SwitchToPage("main")
@@ -86,20 +86,24 @@ func (app *application) pollingLoop() {
 func (app *application) updateMain() {
 	logs, err := app.db.queryLogs(time.Time{}, time.Now())
 	if err != nil {
-		logger.Error(err.Error())
+		slog.Error(err.Error())
 		return
 	}
 
 	app.content.logs = logs
 	app.content.columns = []string{}
-	sort.Stable(sort.StringSlice(app.content.columns))
-	if app.content.selectedLogId == -1 {
-		app.table.Select(1, 0)
-	} else {
-		for i, log := range logs {
-			if log.id == app.content.selectedLogId {
-				app.table.Select(i+1, 0)
-				break
+
+	if len(app.content.logs) > 0 {
+		if app.content.selectedLogId == -1 {
+			slog.Debug("first select", "row", 1)
+			app.table.Select(1, 0)
+		} else {
+			for i, log := range logs {
+				if log.id == app.content.selectedLogId {
+					slog.Debug("select", "row", i+1)
+					app.table.Select(i+1, 0)
+					break
+				}
 			}
 		}
 	}
@@ -142,21 +146,23 @@ func (tc *tableContent) GetCell(row, col int) *tview.TableCell {
 }
 
 func (tc *tableContent) getHeaderCell(row, col int) *tview.TableCell {
-	var text string
-	switch col {
-	case 0:
-		text = "level"
-	case 1:
-		text = "timestamp"
-	case 2:
-		text = "message"
-	default:
-		text = tc.columns[col-3]
-	}
-	return tview.NewTableCell(text).
+	cell := tview.NewTableCell("").
 		SetTextColor(tcell.ColorBlack).
 		SetBackgroundColor(tcell.ColorPurple).
 		SetSelectable(false)
+	switch col {
+	case 0:
+		cell.SetText("level")
+	case 1:
+		cell.SetText("timestamp")
+	case 2:
+		cell.SetText("message")
+		cell.SetMaxWidth(80)
+		cell.SetExpansion(1)
+	default:
+		cell.SetText(tc.columns[col-3])
+	}
+	return cell
 }
 
 func (tc *tableContent) getContentCell(row, col int) *tview.TableCell {

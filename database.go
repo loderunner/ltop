@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/exp/slog"
 )
 
 type DB struct {
@@ -28,7 +30,7 @@ const sqliteTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
 func newDatabase(sqlDB *sql.DB) (*DB, error) {
 	db := DB{sqlDB: sqlDB}
 
-	logger.Info("creating table and indexes")
+	slog.Info("creating table and indexes")
 	_, err := sqlDB.Exec(
 		"CREATE TABLE logs(timestamp DATETIME NOT NULL, level TEXT, data TEXT);" +
 			"CREATE INDEX logs__timestamp ON logs(timestamp);" +
@@ -38,7 +40,7 @@ func newDatabase(sqlDB *sql.DB) (*DB, error) {
 		return nil, fmt.Errorf("couldn't create schema: %w", err)
 	}
 
-	logger.Info("preparing insert statement")
+	slog.Info("preparing insert statement")
 	db.appendStmt, err = sqlDB.Prepare(
 		"INSERT INTO logs(timestamp, level, data) VALUES (:timestamp, :level, json(:data))",
 	)
@@ -54,13 +56,13 @@ var invalidCharacters = regexp.MustCompile(`[^\w\d]+`)
 func (db *DB) appendLog(logJSON []byte) error {
 	var logData map[string]any
 
-	logger.Info("unmarshaling JSON log")
+	slog.Info("unmarshaling JSON log")
 	err := json.Unmarshal(logJSON, &logData)
 	if err != nil {
 		return fmt.Errorf("invalid json data: %w", err)
 	}
 
-	logger.Info("reading timestamp data")
+	slog.Info("reading timestamp data")
 	timestampData, ok := logData["timestamp"]
 	if !ok {
 		timestampData, ok = logData["time"]
@@ -78,7 +80,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 		timestamp = time.Now()
 	}
 
-	logger.Info("reading level data")
+	slog.Info("reading level data")
 	levelData, ok := logData["level"].(string)
 	if !ok {
 		levelData, ok = logData["lvl"].(string)
@@ -99,7 +101,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 		}
 	}
 
-	logger.Info("collecting prop names")
+	slog.Info("collecting prop names")
 	propNames := collectPropNames(logData)
 	if len(propNames) > 0 {
 		queryBuilder := strings.Builder{}
@@ -113,7 +115,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 			)
 		}
 		if queryBuilder.Len() > 0 {
-			logger.Info("creating prop indexes", "prop_names", propNames)
+			slog.Info("creating prop indexes", "prop_names", propNames)
 			_, err = db.sqlDB.Exec(queryBuilder.String())
 			if err != nil {
 				return fmt.Errorf("couldn't create indexes: %w", err)
@@ -121,7 +123,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 		}
 	}
 
-	logger.Info("inserting log in database", "timestamp", timestamp, "level", level)
+	slog.Info("inserting log in database", "timestamp", timestamp, "level", level)
 	_, err = db.appendStmt.Exec(
 		sql.Named("timestamp", timestamp.UTC()),
 		sql.Named("level", level),
@@ -135,7 +137,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 }
 
 func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
-	logger.Info("querying logs", "from", from, "to", to)
+	slog.Info("querying logs", "from", from, "to", to)
 	rows, err := db.sqlDB.Query("SELECT rowid, timestamp, level, data"+
 		" FROM logs"+
 		" WHERE timestamp BETWEEN ? AND ?"+
@@ -157,7 +159,7 @@ func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
 
 		err := rows.Scan(&id, &ts, &level, &logJSON)
 		if err != nil {
-			logger.Error("error scanning row: %s", err)
+			slog.Error("error scanning row: %s", err)
 			continue
 		}
 
