@@ -16,6 +16,7 @@ type DB struct {
 }
 
 type log struct {
+	id        int64
 	level     string
 	timestamp time.Time
 	message   string
@@ -135,7 +136,7 @@ func (db *DB) appendLog(logJSON []byte) error {
 
 func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
 	logger.Info("querying logs", "from", from, "to", to)
-	rows, err := db.sqlDB.Query("SELECT timestamp, level, data"+
+	rows, err := db.sqlDB.Query("SELECT rowid, timestamp, level, data"+
 		" FROM logs"+
 		" WHERE timestamp BETWEEN ? AND ?"+
 		" ORDER BY timestamp DESC",
@@ -149,44 +150,36 @@ func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
 
 	logs := []log{}
 	for rows.Next() {
+		var id int64
 		var ts time.Time
 		var level string
 		var logJSON []byte
 
-		err := rows.Scan(&ts, &level, &logJSON)
+		err := rows.Scan(&id, &ts, &level, &logJSON)
 		if err != nil {
-			// skip invalid row
+			logger.Error("error scanning row: %s", err)
 			continue
 		}
 
+		var message string
 		var logData map[string]any
+
 		err = json.Unmarshal(logJSON, &logData)
 		if err != nil {
-			logs = append(logs, log{timestamp: ts, message: string(logJSON)})
-			continue
-		}
-
-		if msg, ok := logData["message"]; ok {
-			logs = append(logs, log{
-				timestamp: ts,
-				message:   fmt.Sprint(msg),
-				data:      logData,
-			})
-			continue
-		}
-		if msg, ok := logData["msg"]; ok {
-			logs = append(logs, log{
-				timestamp: ts,
-				level:     level,
-				message:   fmt.Sprint(msg),
-				data:      logData,
-			})
-			continue
+			message = string(logJSON)
+		} else if msg, ok := logData["message"]; ok {
+			message = fmt.Sprint(msg)
+		} else if msg, ok := logData["msg"]; ok {
+			message = fmt.Sprint(msg)
+		} else {
+			message = string(logJSON)
 		}
 
 		logs = append(logs, log{
+			id:        id,
 			timestamp: ts,
-			message:   string(logJSON),
+			level:     level,
+			message:   message,
 			data:      logData,
 		})
 	}
