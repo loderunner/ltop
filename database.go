@@ -137,7 +137,8 @@ func (db *DB) queryLogs(from, to time.Time) ([]log, error) {
 	logger.Info("querying logs", "from", from, "to", to)
 	rows, err := db.sqlDB.Query("SELECT timestamp, level, data"+
 		" FROM logs"+
-		" WHERE timestamp BETWEEN ? AND ?",
+		" WHERE timestamp BETWEEN ? AND ?"+
+		" ORDER BY timestamp DESC",
 		from,
 		to,
 	)
