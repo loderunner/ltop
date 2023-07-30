@@ -77,9 +77,14 @@ func (app *application) pollingLoop() {
 				return
 			}
 
+			wasEmpty := len(app.content.logs) == 0
 			app.content.logs = logs
 			app.content.columns = []string{}
 			sort.Stable(sort.StringSlice(app.content.columns))
+			if wasEmpty && len(app.content.logs) > 0 {
+				app.table.Select(1, 0)
+				app.table.ScrollToBeginning()
+			}
 		case "logs":
 			app.logsView.SetText(logBuf.String())
 		}
