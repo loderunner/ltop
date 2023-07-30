@@ -20,18 +20,22 @@ type application struct {
 
 type tableContent struct {
 	*tview.TableContentReadOnly
-	logs    []log
-	columns []string
+	logs          []log
+	columns       []string
+	selectedLogId int64
 }
 
 func newApplication(db *DB) *tview.Application {
-	app := application{db: db}
+	app := application{db: db, content: tableContent{selectedLogId: -1}}
 
 	app.pages = tview.NewPages()
 
 	app.table = tview.NewTable()
 	app.table.SetSelectable(true, false)
 	app.table.SetContent(&app.content)
+	app.table.SetSelectionChangedFunc(
+		func(row, col int) { app.content.selectionChanged(row, col) },
+	)
 	app.table.SetFixed(1, 2)
 
 	app.pages.AddPage("main", app.table, true, true)
@@ -71,25 +75,36 @@ func (app *application) pollingLoop() {
 		page, _ := app.pages.GetFrontPage()
 		switch page {
 		case "main":
-			logs, err := app.db.queryLogs(time.Time{}, time.Now())
-			if err != nil {
-				logger.Error(err.Error())
-				return
-			}
-
-			wasEmpty := len(app.content.logs) == 0
-			app.content.logs = logs
-			app.content.columns = []string{}
-			sort.Stable(sort.StringSlice(app.content.columns))
-			if wasEmpty && len(app.content.logs) > 0 {
-				app.table.Select(1, 0)
-				app.table.ScrollToBeginning()
-			}
+			app.updateMain()
 		case "logs":
 			app.logsView.SetText(logBuf.String())
+			app.QueueUpdateDraw(func() {})
 		}
-		app.QueueUpdateDraw(func() {})
 	}
+}
+
+func (app *application) updateMain() {
+	logs, err := app.db.queryLogs(time.Time{}, time.Now())
+	if err != nil {
+		logger.Error(err.Error())
+		return
+	}
+
+	app.content.logs = logs
+	app.content.columns = []string{}
+	sort.Stable(sort.StringSlice(app.content.columns))
+	if app.content.selectedLogId == -1 {
+		app.table.Select(1, 0)
+	} else {
+		for i, log := range logs {
+			if log.id == app.content.selectedLogId {
+				app.table.Select(i+1, 0)
+				break
+			}
+		}
+	}
+
+	app.QueueUpdateDraw(func() {})
 }
 
 func (tc *tableContent) getColumns() []string {
@@ -118,17 +133,17 @@ func (tc *tableContent) getColumns() []string {
 	return columns
 }
 
-func (tc *tableContent) GetCell(row, column int) *tview.TableCell {
+func (tc *tableContent) GetCell(row, col int) *tview.TableCell {
 	if row == 0 {
-		return tc.getHeaderCell(row, column)
+		return tc.getHeaderCell(row, col)
 	} else {
-		return tc.getContentCell(row-1, column)
+		return tc.getContentCell(row-1, col)
 	}
 }
 
-func (tc *tableContent) getHeaderCell(row int, column int) *tview.TableCell {
+func (tc *tableContent) getHeaderCell(row, col int) *tview.TableCell {
 	var text string
-	switch column {
+	switch col {
 	case 0:
 		text = "level"
 	case 1:
@@ -136,7 +151,7 @@ func (tc *tableContent) getHeaderCell(row int, column int) *tview.TableCell {
 	case 2:
 		text = "message"
 	default:
-		text = tc.columns[column-3]
+		text = tc.columns[col-3]
 	}
 	return tview.NewTableCell(text).
 		SetTextColor(tcell.ColorBlack).
@@ -144,10 +159,10 @@ func (tc *tableContent) getHeaderCell(row int, column int) *tview.TableCell {
 		SetSelectable(false)
 }
 
-func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
+func (tc *tableContent) getContentCell(row, col int) *tview.TableCell {
 	cell := tview.NewTableCell("")
 	log := tc.logs[row]
-	switch column {
+	switch col {
 	case 0:
 		cell.SetText(log.level)
 		switch log.level {
@@ -171,12 +186,16 @@ func (tc *tableContent) getContentCell(row int, column int) *tview.TableCell {
 		cell.SetMaxWidth(80)
 		cell.SetExpansion(1)
 	default:
-		v := log.data[tc.columns[column]]
+		v := log.data[tc.columns[col]]
 		if v != nil {
 			cell.SetText(fmt.Sprint(v))
 		}
 	}
 	return cell
+}
+
+func (tc *tableContent) selectionChanged(row, col int) {
+	tc.selectedLogId = tc.logs[row-1].id
 }
 
 func (tc *tableContent) GetRowCount() int {
