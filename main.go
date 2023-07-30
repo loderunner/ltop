@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"database/sql"
 	"flag"
+	"io"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -52,7 +53,7 @@ func main() {
 	}
 }
 
-func scanInput(input *os.File, db *DB) {
+func scanInput(input io.Reader, db *DB) {
 	scanner := bufio.NewScanner(input)
 
 	for scanner.Scan() {

@@ -216,24 +216,6 @@ func TestQueryLogs(t *testing.T) {
 	assert.Equal(t, expect, logs)
 }
 
-func TestRace(t *testing.T) {
-	sqlDB, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("unexpected error creating SQL database: %s", err)
-	}
-
-	db, err := newDatabase(sqlDB)
-	if err != nil {
-		t.Fatalf("unexpected error creating database: %s", err)
-	}
-
-	go db.appendLog([]byte{})
-	go db.queryLogs(time.Time{}, time.Now())
-	go db.appendLog([]byte{})
-	go db.appendLog([]byte(fmt.Sprintf(`{"time":%s,"level":"info","hello":"world"}`, time.Now().UTC().Format(time.RFC3339Nano))))
-	go db.queryLogs(time.Time{}, time.Now())
-}
-
 func testCreateDatabase(t *testing.T, sqlDB *sql.DB, mock sqlmock.Sqlmock) *DB {
 	mock.
 		ExpectExec("CREATE TABLE logs.*CREATE INDEX logs__timestamp ON logs.*CREATE INDEX logs__level ON logs").

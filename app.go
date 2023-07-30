@@ -59,7 +59,6 @@ func newApplication(db *DB) *tview.Application {
 		return e
 	})
 
-	app.queryLogs()
 	go app.pollingLoop()
 
 	return app.Application
@@ -72,27 +71,20 @@ func (app *application) pollingLoop() {
 		page, _ := app.pages.GetFrontPage()
 		switch page {
 		case "main":
-			app.queryLogs()
+			logs, err := app.db.queryLogs(time.Time{}, time.Now())
+			if err != nil {
+				logger.Error(err.Error())
+				return
+			}
+
+			app.content.logs = logs
+			app.content.columns = []string{}
+			sort.Stable(sort.StringSlice(app.content.columns))
 		case "logs":
 			app.logsView.SetText(logBuf.String())
 		}
 		app.QueueUpdateDraw(func() {})
 	}
-}
-
-func (app *application) queryLogs() {
-	var err error
-
-	logs, err := app.db.queryLogs(time.Time{}, time.Now())
-	if err != nil {
-		return
-	}
-
-	app.content.logs = logs
-	app.content.columns = app.content.getColumns()
-	sort.Stable(sort.StringSlice(app.content.columns))
-
-	app.QueueUpdateDraw(func() {})
 }
 
 func (tc *tableContent) getColumns() []string {
@@ -187,5 +179,5 @@ func (tc *tableContent) GetRowCount() int {
 }
 
 func (tc *tableContent) GetColumnCount() int {
-	return len(tc.getColumns()) + 3
+	return len(tc.columns) + 3
 }
