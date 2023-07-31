@@ -90,10 +90,10 @@ func (app *application) updateMain() {
 		return
 	}
 
-	app.content.logs = logs
-	app.content.columns = []string{}
-
 	app.QueueUpdateDraw(func() {
+		app.content.logs = logs
+		app.content.columns = []string{}
+
 		if len(app.content.logs) > 0 {
 			if app.content.selectedLogId == -1 {
 				slog.Debug("first select", "row", 1)
