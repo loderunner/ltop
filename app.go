@@ -50,10 +50,15 @@ func newApplication(db *DB) *tview.Application {
 		key := e.Key()
 		slog.Debug("received key event", "key", key)
 		switch key {
-		case tcell.KeyF1:
-			app.pages.SwitchToPage("main")
-		case tcell.KeyF2:
-			app.pages.SwitchToPage("logs")
+		case tcell.KeyF10:
+			page, _ := app.pages.GetFrontPage()
+			switch page {
+			case "logs":
+				app.pages.SwitchToPage("main")
+			default:
+				app.pages.SwitchToPage("logs")
+			}
+			return nil
 		case tcell.KeyRune:
 			if e.Rune() == 'q' {
 				app.Stop()
