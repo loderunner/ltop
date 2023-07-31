@@ -206,7 +206,7 @@ func (tc *tableContent) selectionChanged(row, col int) {
 }
 
 func (tc *tableContent) GetRowCount() int {
-	return len(tc.logs)
+	return len(tc.logs) + 1
 }
 
 func (tc *tableContent) GetColumnCount() int {
