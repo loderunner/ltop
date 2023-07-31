@@ -64,7 +64,6 @@ func newApplication(db *DB) *tview.Application {
 	})
 
 	go app.pollingLoop()
-
 	return app.Application
 }
 
@@ -77,8 +76,9 @@ func (app *application) pollingLoop() {
 		case "main":
 			app.updateMain()
 		case "logs":
-			app.logsView.SetText(logBuf.String())
-			app.QueueUpdateDraw(func() {})
+			app.QueueUpdateDraw(func() {
+				app.logsView.SetText(logBuf.String())
+			})
 		}
 	}
 }
@@ -93,22 +93,23 @@ func (app *application) updateMain() {
 	app.content.logs = logs
 	app.content.columns = []string{}
 
-	if len(app.content.logs) > 0 {
-		if app.content.selectedLogId == -1 {
-			slog.Debug("first select", "row", 1)
-			app.table.Select(1, 0)
-		} else {
-			for i, log := range logs {
-				if log.id == app.content.selectedLogId {
-					slog.Debug("select", "row", i+1)
-					app.table.Select(i+1, 0)
-					break
+	app.QueueUpdateDraw(func() {
+		if len(app.content.logs) > 0 {
+			if app.content.selectedLogId == -1 {
+				slog.Debug("first select", "row", 1)
+				app.table.Select(1, 0)
+				app.table.SetOffset(0, 0)
+			} else {
+				for i, log := range logs {
+					if log.id == app.content.selectedLogId {
+						slog.Debug("select", "row", i+1)
+						app.table.Select(i+1, 0)
+						break
+					}
 				}
 			}
 		}
-	}
-
-	app.QueueUpdateDraw(func() {})
+	})
 }
 
 func (tc *tableContent) getColumns() []string {
