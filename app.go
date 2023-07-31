@@ -11,11 +11,10 @@ import (
 
 type application struct {
 	*tview.Application
-	pages    *tview.Pages
-	logsView *tview.TextView
-	table    *tview.Table
-	content  tableContent
-	db       *DB
+	pages   *tview.Pages
+	table   *tview.Table
+	content tableContent
+	db      *DB
 }
 
 type tableContent struct {
@@ -40,25 +39,12 @@ func newApplication(db *DB) *tview.Application {
 
 	app.pages.AddPage("main", app.table, true, true)
 
-	app.logsView = tview.NewTextView()
-
-	app.pages.AddPage("logs", app.logsView, true, false)
-
 	app.Application = tview.NewApplication()
 	app.SetRoot(app.pages, true)
 	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		key := e.Key()
 		slog.Debug("received key event", "key", key)
 		switch key {
-		case tcell.KeyF10:
-			page, _ := app.pages.GetFrontPage()
-			switch page {
-			case "logs":
-				app.pages.SwitchToPage("main")
-			default:
-				app.pages.SwitchToPage("logs")
-			}
-			return nil
 		case tcell.KeyRune:
 			if e.Rune() == 'q' {
 				app.Stop()
@@ -76,15 +62,7 @@ func (app *application) pollingLoop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		page, _ := app.pages.GetFrontPage()
-		switch page {
-		case "main":
-			app.updateMain()
-		case "logs":
-			app.QueueUpdateDraw(func() {
-				app.logsView.SetText(logBuf.String())
-			})
-		}
+		app.updateMain()
 	}
 }
 
