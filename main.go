@@ -2,37 +2,62 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"database/sql"
-	"flag"
 	"io"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/spf13/pflag"
 	"golang.org/x/exp/slog"
 )
 
-var logBuf bytes.Buffer
+type nullHandler struct{}
+
+func (h *nullHandler) Enabled(context.Context, slog.Level) bool {
+	return false
+}
+func (h *nullHandler) Handle(context.Context, slog.Record) error {
+	return nil
+}
+func (h *nullHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+func (h *nullHandler) WithGroup(name string) slog.Handler {
+	return h
+}
 
 func main() {
-	var input *os.File
-	var err error
+	debugLog := pflag.Bool("debug-log", false, "output debug logs to file")
+	pflag.Parse()
 
-	slog.SetDefault(
-		slog.New(
-			slog.NewTextHandler(
-				&logBuf,
-				&slog.HandlerOptions{Level: slog.LevelInfo},
+	if *debugLog {
+		f, err := os.OpenFile(
+			"ltop_debug.log",
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+			0644,
+		)
+		if err != nil {
+			panic(err.Error())
+		}
+		slog.SetDefault(
+			slog.New(
+				slog.NewTextHandler(
+					f,
+					&slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true},
+				),
 			),
-		),
-	)
-	slog.Info("parsing arguments")
+		)
+	} else {
+		slog.SetDefault(slog.New(&nullHandler{}))
+	}
 
-	flag.Parse()
-	args := flag.Args()
-	if len(args) > 0 {
-		slog.Info("opening file", "filename", args[0])
-		input, err = os.Open(args[0])
+	var err error
+	var input *os.File
+	if pflag.NArg() > 0 {
+		filename := pflag.Arg(0)
+		slog.Info("opening file", "filename", filename)
+		input, err = os.Open(filename)
 		if err != nil {
 			panic(err.Error())
 		}
